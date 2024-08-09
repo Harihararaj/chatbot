@@ -1,6 +1,6 @@
 # 💬 Chatbot...
 
-Chatbot, where user can chat with the LLM. Developed using Streamlit and VertexAI
+Chatbot, where user can chat with the LLM, developed using Streamlit and VertexAI
 
 ### How to run it on your own machine
 
