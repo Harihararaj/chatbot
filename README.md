@@ -1,4 +1,4 @@
-# 💬 Chatbot template
+# 💬 Chatbot...
 
 Chatbot, where user can chat with the LLM. Developed using Streamlit and VertexAI
 
