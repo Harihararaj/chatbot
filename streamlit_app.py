@@ -1,56 +1,83 @@
+import vertexai
 import streamlit as st
-from openai import OpenAI
+from vertexai.preview import generative_models
+from vertexai.preview.generative_models import GenerativeModel, Part, Content, ChatSession
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
-)
+def stream_data_from_llm(chat : ChatSession, query: str):
+    '''
+    Method to stream data from the llm.
+    @chat: VertexAI llm ChatSession.
+    @query: User provided prompt.
+    '''
+    for partial_response in chat.send_message(query, stream = True):
+        yield partial_response.text
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
-
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
-
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
-
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
+def chat_with_llm(chat : ChatSession, prompt : str):
+    '''
+    Get the prompt from the user, generate response from the llm and stream that generated data to the user via Streamlit UI.
+    @chat: VertexAI llm ChatSession.
+    @prompt: User provided prompt.
+    '''
+    try:
+        llm_response = st.chat_message(ASSISTANT).write_stream(stream_data_from_llm(chat, prompt))
+        st.session_state[MESSAGES].append(
+            {
+                ROLE : USER,
+                CONTENT : prompt
+            }
         )
+        st.session_state[MESSAGES].append(
+            {
+                ROLE : MODEL,
+                CONTENT : llm_response
+            }
+        )
+    except Exception as e:
+        st.error(f"An error occurred during streaming: {e}")
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+project = "sample-gemini-424220"
+vertexai.init(project = project)
+config = generative_models.GenerationConfig(
+    temperature=0.0,
+    max_output_tokens=100                         
+)
+model = GenerativeModel(
+    "gemini-pro",
+    generation_config = config
+)
+chat = model.start_chat()
+
+USER = 'user'
+ASSISTANT = 'ai'
+MESSAGES = 'messages'
+ROLE = 'role'
+CONTENT = 'content'
+MODEL = 'model'
+
+if MESSAGES not in st.session_state:
+    st.session_state[MESSAGES] = []
+
+for index, message in enumerate(st.session_state[MESSAGES]):
+    content = Content(
+        role = message[ROLE],
+        parts = [Part.from_text(message[CONTENT])]
+    )
+
+    chat.history.append(content)
+
+    if index!=0:
+        if message[ROLE] == USER:
+            st.chat_message(USER).write(message[CONTENT])
+        else:
+            st.chat_message(ASSISTANT).write(message[CONTENT])
+
+prompt : str = st.chat_input("Enter a prompt here")
+if prompt:
+    st.chat_message(USER).write(prompt)
+    chat_with_llm(chat, prompt)
+
+if len(st.session_state.messages) == 0:
+    initial_prompt = "Introduce yourself as ReX, an assistant powered by Google Gemini. You use emojis to be interactive. Also the \
+    introduction should be only for 2 lines"
+    chat_with_llm(chat, initial_prompt)
+
